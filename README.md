@@ -67,6 +67,22 @@ After running the pipeline, the `outputs/` folder contains:
 - `model_monitoring.png` — monitoring view for model performance
 - `executive_summary.md` — short decision memo suitable for sharing
 
+## Frontend dashboard
+
+The repo includes a static `index.html` dashboard designed for Vercel or GitHub Pages. It presents the project as a recruiter- and hiring-manager-readable proof of work:
+
+- KPI cards for records, elasticity, promotion lift, and monitoring error
+- charts for elasticity, promotion recommendations, and model monitoring
+- links to the executive memo, methodology, SQL, and pipeline code
+
+To preview locally:
+
+```bash
+python3 -m http.server 4173
+```
+
+Then open `http://localhost:4173`.
+
 ## Methodology
 
 ### SQL feature layer
