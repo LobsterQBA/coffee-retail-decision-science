@@ -2,11 +2,20 @@
 
 Proof-of-work project for a Data Scientist, Data & Analytics role focused on analytically ready datasets, repeatable modeling pipelines, model monitoring, visualization, and decision support.
 
-This project uses synthetic coffee-retail data. It is inspired by common retail analytics problems, not by proprietary Starbucks data.
+This project combines two layers:
+
+- a public-data city price map that compares observed Starbucks Caffè Latte delivery-menu quotes with local metro-area price levels
+- a synthetic coffee-retail decision science pipeline for elasticity, promotion validation, and model monitoring
+
+It is inspired by common retail analytics problems, not by proprietary Starbucks data.
 
 ## Business question
 
-How should a coffee retailer choose weekly promotions and staffing priorities across stores when demand depends on price, seasonality, weather, local store context, and product category?
+Do Starbucks menu prices vary by U.S. city, and do those differences line up with local cost-of-living pressure?
+
+The city map joins manually curated public Starbucks Caffè Latte delivery-menu observations to BEA metro-area Regional Price Parities, then models whether higher local price levels correspond to higher observed Starbucks quotes.
+
+The companion synthetic pipeline asks: how should a coffee retailer choose weekly promotions and staffing priorities across stores when demand depends on price, seasonality, weather, local store context, and product category?
 
 ## Why this is relevant to the role
 
@@ -20,12 +29,15 @@ The Starbucks role asks for someone who can:
 
 This repo demonstrates that workflow end to end:
 
-1. Generate synthetic store, calendar, promotion, and sales data.
-2. Use SQL to create an analytically ready daily store-category panel.
-3. Estimate demand elasticity with a log-log model and uncertainty bands.
-4. Run a simple promotion lift validation using difference-in-differences.
-5. Recommend promotions with an optimization-style scoring heuristic.
-6. Produce decision-ready charts and model monitoring outputs.
+1. Curate a city-level public price dataset with source URLs and caveats.
+2. Join Starbucks price observations to BEA 2024 metro-area Regional Price Parities.
+3. Map which cities sit above or below a local-cost-implied price benchmark.
+4. Generate synthetic store, calendar, promotion, and sales data.
+5. Use SQL to create an analytically ready daily store-category panel.
+6. Estimate demand elasticity with a log-log model and uncertainty bands.
+7. Run a simple promotion lift validation using difference-in-differences.
+8. Recommend promotions with an optimization-style scoring heuristic.
+9. Produce decision-ready charts and model monitoring outputs.
 
 ## Project structure
 
@@ -37,6 +49,7 @@ This repo demonstrates that workflow end to end:
 │   ├── create_model_features.sql # SQL transformation into modeling table
 │   └── monitoring_checks.sql     # SQL checks for model output monitoring
 ├── src/coffee_decision_science/
+│   ├── city_price_map.py
 │   ├── generate_synthetic_data.py
 │   └── pipeline.py
 ├── requirements.txt
@@ -51,14 +64,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python -m src.coffee_decision_science.generate_synthetic_data
 python -m src.coffee_decision_science.pipeline
+python -m src.coffee_decision_science.city_price_map
 ```
 
-If you already have `pandas`, `numpy`, and `matplotlib` installed, you can run the two Python commands directly.
+If you already have `pandas`, `numpy`, and `matplotlib` installed, you can run the Python commands directly.
 
 ## Outputs
 
 After running the pipeline, the `outputs/` folder contains:
 
+- `city_price_index.csv` — city-level Starbucks latte observations joined to BEA RPP metrics
+- `city_price_index.json` / `city_price_index.js` — data payload for the interactive map
+- `city_price_map_memo.md` — short memo explaining findings, caveats, and next steps
 - `elasticity_by_category.csv` — estimated category-level price elasticity with approximate uncertainty bounds
 - `promotion_recommendations.csv` — next-week promotion recommendations ranked by expected incremental margin
 - `model_monitoring.csv` — weekly prediction-error monitoring table
@@ -71,9 +88,13 @@ After running the pipeline, the `outputs/` folder contains:
 
 The repo includes a static `index.html` dashboard designed for Vercel or GitHub Pages. It presents the project as a recruiter- and hiring-manager-readable proof of work:
 
-- KPI cards for records, elasticity, promotion lift, and monitoring error
-- charts for elasticity, promotion recommendations, and model monitoring
-- links to the executive memo, methodology, SQL, and pipeline code
+- an interactive U.S. map of city-level latte quotes
+- bubble color showing residuals above or below a local-cost-implied benchmark
+- a scatter plot of observed latte price vs. BEA all-items Regional Price Parity
+- an outlier table for cities that merit pricing follow-up
+- links to the memo, methodology, SQL, and pipeline code
+
+![City price map preview](outputs/city-map-preview.png)
 
 To preview locally:
 
@@ -82,6 +103,24 @@ python3 -m http.server 4173
 ```
 
 Then open `http://localhost:4173`.
+
+## Public-data price map methodology
+
+The map uses:
+
+- public Starbucks Caffè Latte delivery-menu observations across selected U.S. cities
+- BEA 2024 metro-area Regional Price Parities for all-items, housing, goods, utilities, and other services
+- a simple linear benchmark: observed latte quote as a function of all-items RPP
+
+The residual is the business-readable diagnostic:
+
+```text
+observed latte quote - RPP-implied latte quote
+```
+
+Positive residuals flag cities where the observed quote is higher than local price level alone would predict. Negative residuals flag cities that appear lower than expected after adjusting for metro price level.
+
+Important caveat: the Starbucks observations are delivery-menu quotes, not official in-store Starbucks prices. Starbucks states that delivery-app prices may be higher than posted store prices. For a production-quality version, the next step would be collecting multiple stores per city through a governed, repeatable price collection process and separating delivery markup from in-store menu pricing.
 
 ## Methodology
 
