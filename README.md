@@ -1,177 +1,101 @@
 # Coffee Retail Decision Science
 
-Proof-of-work project for a Data Scientist, Data & Analytics role focused on analytically ready datasets, repeatable modeling pipelines, model monitoring, visualization, and decision support.
+**Do coffee menu prices track local cost of living, and how should a retailer pick next week's promotions?**
 
-This project combines two layers:
+A compact, end-to-end decision science project built on public and synthetic data. It goes from a business question to a modeling table, an elasticity model, a causal check, a ranked recommendation, and a monitoring view. Everything is reproducible with three commands.
 
-- a public-data city price map that compares observed Starbucks Caffè Latte delivery-menu quotes with local metro-area price levels
-- a synthetic coffee-retail decision science pipeline for elasticity, promotion validation, and model monitoring
+![City price map: observed latte quotes vs. local price level](outputs/city-map-preview.png)
 
-It is inspired by common retail analytics problems, not by proprietary Starbucks data.
+## What it answers
 
-## Business question
+| Layer | Question | Data | Output |
+| --- | --- | --- | --- |
+| City price map | Do Starbucks latte prices vary by U.S. city in line with local price levels? | Public delivery-menu quotes + BEA Regional Price Parities | Interactive map, residual scatter, outlier table |
+| Promotion pipeline | Which store × category promotions are worth running next week? | Synthetic store, calendar, promo, and sales panel | Elasticity by category, promo lift validation, ranked recommendations, weekly monitoring |
 
-Do Starbucks menu prices vary by U.S. city, and do those differences line up with local cost-of-living pressure?
+The map uses real public observations. The promotion pipeline uses synthetic data so that the full workflow can be shared without proprietary tables.
 
-The city map joins manually curated public Starbucks Caffè Latte delivery-menu observations to BEA metro-area Regional Price Parities, then models whether higher local price levels correspond to higher observed Starbucks quotes.
+## Pipeline
 
-The companion synthetic pipeline asks: how should a coffee retailer choose weekly promotions and staffing priorities across stores when demand depends on price, seasonality, weather, local store context, and product category?
-
-## Why this is relevant to the role
-
-The Starbucks role asks for someone who can:
-
-- extract, shape, and validate data with SQL
-- build repeatable Python/R pipelines for model training and outputs
-- communicate methodology and business implications clearly
-- monitor model performance through dashboards or reporting
-- apply elasticity, causal inference, and optimization for decision support
-
-This repo demonstrates that workflow end to end:
-
-1. Curate a city-level public price dataset with source URLs and caveats.
-2. Join Starbucks price observations to BEA 2024 metro-area Regional Price Parities.
-3. Map which cities sit above or below a local-cost-implied price benchmark.
-4. Generate synthetic store, calendar, promotion, and sales data.
-5. Use SQL to create an analytically ready daily store-category panel.
-6. Estimate demand elasticity with a log-log model and uncertainty bands.
-7. Run a simple promotion lift validation using difference-in-differences.
-8. Recommend promotions with an optimization-style scoring heuristic.
-9. Produce decision-ready charts and model monitoring outputs.
-
-## Project structure
-
-```text
-.
-├── data/                         # Generated synthetic data and local SQLite database
-├── outputs/                      # Generated charts and model artifacts
-├── sql/
-│   ├── create_model_features.sql # SQL transformation into modeling table
-│   └── monitoring_checks.sql     # SQL checks for model output monitoring
-├── src/coffee_decision_science/
-│   ├── city_price_map.py
-│   ├── generate_synthetic_data.py
-│   └── pipeline.py
-├── requirements.txt
-└── README.md
+```mermaid
+flowchart TB
+    subgraph Public["City price map"]
+        direction LR
+        P1["Latte quotes by city"] --> P2["Join BEA metro price parities"] --> P3["Linear benchmark: quote ~ RPP"] --> P4["Residual map + outliers"]
+    end
+    subgraph Synthetic["Promotion decision pipeline"]
+        direction LR
+        S1["Generate stores, calendar, promos, sales"] --> S2["SQL: daily store × category panel"] --> S3["Log-log elasticity model + bootstrap CI"]
+        S3 --> S4["Diff-in-diff promo validation"] --> S5["Score and rank promotions"] --> S6["Weekly error monitoring"]
+    end
+    Public ~~~ Synthetic
 ```
 
-## Quickstart
+## Key results
+
+Numbers below come from the committed synthetic run and are meant to show the workflow, not real retail performance.
+
+- **Price sensitivity differs by category.** Whole bean is the most elastic category; food is the least. Discounts on food are less likely to pay back through volume alone.
+- **Promotion lift is validated, not assumed.** A difference-in-differences check on a cold-beverage promotion wave estimates incremental units above both the store's own baseline and a concurrent control group.
+- **Recommendations trade volume against margin.** Candidates are scored as expected incremental units × margin per unit − discount cost, so the top pick is not simply the deepest discount.
+- **The model is monitored.** A weekly MAPE table flags weeks above a review threshold before outputs are used for decisions.
+
+| Elasticity by category | Top promotion candidates | Model monitoring |
+| --- | --- | --- |
+| ![](outputs/elasticity_by_category.png) | ![](outputs/promotion_recommendations.png) | ![](outputs/model_monitoring.png) |
+
+Read the short [executive summary](outputs/executive_summary.md) and the [city price map memo](outputs/city_price_map_memo.md) for the written recommendations and caveats.
+
+## Methodology
+
+**City price map.** Manually curated Caffè Latte delivery-menu quotes across selected U.S. cities are joined to BEA 2024 metro-area Regional Price Parities. A linear benchmark predicts the quote from the all-items RPP, and the residual (observed − implied) is the diagnostic. Positive residuals flag cities priced above what local cost alone would predict.
+
+**SQL feature layer.** The modeling table is built in SQL at the daily store × category grain: demand, revenue, margin, price and discount features, holiday/weekend/weather/seasonality controls, and rolling trailing baselines. See [`sql/create_model_features.sql`](sql/create_model_features.sql).
+
+**Demand model.** `log(units) ~ log(price) + promo_depth + weather + holiday + weekend + store_type + category`. The `log(price)` coefficient is the elasticity. Category-level estimates come from fitting the same controlled model per category, with bootstrap uncertainty bands.
+
+**Causal validation.** `(treated after − treated before) − (control after − control before)` on promoted store-category pairs.
+
+**Decision scoring.** `expected incremental units × expected margin per unit − discount cost`.
+
+**Monitoring.** [`sql/monitoring_checks.sql`](sql/monitoring_checks.sql) produces weekly prediction error and bias with review thresholds.
+
+## Caveats
+
+- Starbucks observations are delivery-app quotes, which Starbucks states may be higher than in-store prices. A production version would collect multiple stores per city through a governed process and separate delivery markup from menu pricing.
+- The promotion pipeline is synthetic. Elasticities, lifts, and recommendations describe the generator, not any real business.
+
+## Run it
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m src.coffee_decision_science.generate_synthetic_data
 python -m src.coffee_decision_science.pipeline
 python -m src.coffee_decision_science.city_price_map
 ```
 
-If you already have `pandas`, `numpy`, and `matplotlib` installed, you can run the Python commands directly.
-
-## Outputs
-
-After running the pipeline, the `outputs/` folder contains:
-
-- `city_price_index.csv` — city-level Starbucks latte observations joined to BEA RPP metrics
-- `city_price_index.json` / `city_price_index.js` — data payload for the interactive map
-- `city_price_map_memo.md` — short memo explaining findings, caveats, and next steps
-- `elasticity_by_category.csv` — estimated category-level price elasticity with approximate uncertainty bounds
-- `promotion_recommendations.csv` — next-week promotion recommendations ranked by expected incremental margin
-- `model_monitoring.csv` — weekly prediction-error monitoring table
-- `elasticity_by_category.png` — business-readable elasticity chart
-- `promotion_recommendations.png` — top recommended promotions
-- `model_monitoring.png` — monitoring view for model performance
-- `executive_summary.md` — short decision memo suitable for sharing
-
-## Frontend dashboard
-
-The repo includes a static `index.html` dashboard designed for Vercel or GitHub Pages. It presents the project as a recruiter- and hiring-manager-readable proof of work:
-
-- an interactive U.S. map of city-level latte quotes
-- bubble color showing residuals above or below a local-cost-implied benchmark
-- a scatter plot of observed latte price vs. BEA all-items Regional Price Parity
-- an outlier table for cities that merit pricing follow-up
-- links to the memo, methodology, SQL, and pipeline code
-
-![City price map preview](outputs/city-map-preview.png)
-
-To preview locally:
+Then preview the dashboard:
 
 ```bash
 python3 -m http.server 4173
 ```
 
-Then open `http://localhost:4173`.
+Open `http://localhost:4173`.
 
-## Public-data price map methodology
-
-The map uses:
-
-- public Starbucks Caffè Latte delivery-menu observations across selected U.S. cities
-- BEA 2024 metro-area Regional Price Parities for all-items, housing, goods, utilities, and other services
-- a simple linear benchmark: observed latte quote as a function of all-items RPP
-
-The residual is the business-readable diagnostic:
+## Repository layout
 
 ```text
-observed latte quote - RPP-implied latte quote
+data/                          synthetic data, curated city observations, local SQLite
+sql/                           feature layer and monitoring checks
+src/coffee_decision_science/   data generation, pipeline, city price map
+outputs/                       charts, CSVs, memos, and map payload
+index.html                     static dashboard (Vercel / GitHub Pages ready)
 ```
-
-Positive residuals flag cities where the observed quote is higher than local price level alone would predict. Negative residuals flag cities that appear lower than expected after adjusting for metro price level.
-
-Important caveat: the Starbucks observations are delivery-menu quotes, not official in-store Starbucks prices. Starbucks states that delivery-app prices may be higher than posted store prices. For a production-quality version, the next step would be collecting multiple stores per city through a governed, repeatable price collection process and separating delivery markup from in-store menu pricing.
-
-## Methodology
-
-### SQL feature layer
-
-The modeling table is built in SQL at the daily store-category level. It joins transaction, store, and calendar data, then creates:
-
-- demand, revenue, and gross margin outcomes
-- price and discount features
-- holiday, weekend, weather, and seasonality controls
-- rolling trailing demand baselines
-
-### Demand model
-
-The model estimates:
-
-```text
-log(units_sold) ~ log(price) + promo_depth + weather + holiday + weekend + store type + category
-```
-
-The `log(price)` coefficient is interpreted as price elasticity. Category-specific elasticity is estimated by fitting the same controlled model separately by category. Uncertainty bands are generated with bootstrap resampling.
-
-### Causal validation
-
-The project includes a lightweight difference-in-differences validation:
-
-```text
-(treated after - treated before) - (control after - control before)
-```
-
-This checks whether promoted store-category pairs saw incremental demand above their own baseline and the concurrent control group.
-
-### Decision support
-
-Promotion candidates are scored using:
-
-```text
-expected incremental units × expected margin per unit - discount cost
-```
-
-The recommendation intentionally balances volume lift with margin tradeoffs, rather than maximizing units sold alone.
 
 ## What I would productionize next
 
-- Replace synthetic data with governed internal tables.
-- Move the SQL feature layer into dbt or a shared analytics repo.
-- Add Airflow/Databricks scheduling and data-quality checks.
+- Replace synthetic tables with governed internal data and move the SQL layer into dbt.
+- Schedule with Airflow or Databricks and add data-quality checks.
 - Use Bayesian hierarchical elasticity to borrow strength across sparse store-category cells.
-- Add a Tableau/Power BI dashboard for elasticity, recommendations, and model monitoring.
-- Track drift in elasticity, forecast error, promo mix, and recommendation adoption.
-
-## Applicant note
-
-I built this as a compact demonstration of the kind of data science workflow I would bring to a retail analytics team: start from a decision, make the data reproducible, validate the model, and translate outputs into actions that operators and business partners can use.
+- Track drift in elasticity, forecast error, promo mix, and recommendation adoption in a BI dashboard.
